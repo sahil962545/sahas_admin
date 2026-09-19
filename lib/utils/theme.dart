@@ -32,7 +32,7 @@ class AppTheme {
       appBarTheme: const AppBarTheme(
         elevation: 0,
         backgroundColor: Colors.white,
-        centerTitle: true,
+        centerTitle: false,
         scrolledUnderElevation: 2,
       ),
       chipTheme: ChipThemeData(
@@ -49,6 +49,7 @@ class AppTheme {
     );
   }
 
+  /*
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
@@ -76,6 +77,7 @@ class AppTheme {
       ),
     );
   }
+  */
 }
 
 class MoodStyle {

@@ -82,18 +82,27 @@ class _LoginScreenState extends State<LoginScreen> {
                 
                 // Welcome Text
                 Text(
-                  'SAHAS ADMIN',
+                  'SMILE ADMIN',
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w900,
                     color: theme.colorScheme.primary,
                     letterSpacing: 1.5,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
+                Text(
+                  'SMILE (Soldier Morale & Individual Life Evaluation)',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Text(
                   'Sign in to access your administrative dashboard',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -275,7 +284,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                
                 // Footer
                 Text(
                   'Security secured with AES 256-bit encryption.',

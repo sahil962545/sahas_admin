@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'auth_controller.dart';
 import 'package:another_telephony/telephony.dart';
+import '../models/dashboard_model.dart';
 import '../models/review_model.dart';
 import '../models/sahas_report.dart';
 import '../models/unit_model.dart';
@@ -19,31 +20,96 @@ class ReportController extends GetxController {
   final RxList<ReviewModel> reviews = <ReviewModel>[].obs;
   final RxList<UnitModel> units = <UnitModel>[].obs;
   final RxString selectedUnitId = ''.obs;
+  final RxList<String> selectedUnitIds = <String>[].obs;
   final RxBool isLoadingUnits = false.obs;
+
+  // View Visibility Observable (Chart-first Home Screen)
+  final RxBool isDetailsVisible = false.obs;
+
+  // Dashboard Metrics Observable
+  final Rxn<DashboardModel> dashboardData = Rxn<DashboardModel>();
+  final RxBool isLoadingDashboard = false.obs;
 
   // State Observables
   final RxList<SahasReport> reports = <SahasReport>[].obs;
   final RxBool hasPermission = false.obs;
   final RxBool isPermanentlyDenied = false.obs;
   final RxBool isLoading = false.obs;
+  final RxBool isDeletingReview = false.obs;
   final RxString errorMessage = ''.obs;
 
   // Filter & Search Observables
   final RxString searchQuery = ''.obs;
+  final RxString selectedSentiment =
+      ''.obs; // '', 'happy', 'unhappy', 'emergency'
+  final RxString activeDatePreset =
+      'All'.obs; // 'All', '2 Days', '7 Days', 'Custom'
   final Rxn<DateTimeRange> selectedDateRange = Rxn<DateTimeRange>();
 
   @override
   void onInit() {
     super.onInit();
-    
-    // Listen for filter changes and trigger API re-fetch automatically
+
+    // Listen for filter changes and trigger API re-fetch for reviews list automatically
     ever(selectedUnitId, (_) => fetchReviews());
+    ever(selectedUnitIds, (_) => fetchReviews());
     ever(selectedDateRange, (_) => fetchReviews());
+    ever(selectedSentiment, (_) => fetchReviews());
 
     // Initial data fetch
     hasPermission.value = true;
+    _initializeUnitUserScope();
     fetchUnits();
     fetchReviews();
+    fetchDashboard();
+  }
+
+  void _initializeUnitUserScope() {
+    if (Get.isRegistered<AuthController>()) {
+      final authCtrl = Get.find<AuthController>();
+      if (authCtrl.isUnitUser && authCtrl.userUnit.value.isNotEmpty) {
+        selectedUnitId.value = authCtrl.userUnit.value;
+      }
+    }
+  }
+
+  /// Fetch dashboard metrics from API
+  Future<void> fetchDashboard() async {
+    try {
+      isLoadingDashboard.value = true;
+
+      String? fromDateStr;
+      String? toDateStr;
+
+      final range = selectedDateRange.value;
+      if (range != null) {
+        fromDateStr = range.start.toIso8601String().split('T')[0];
+        toDateStr = range.end.toIso8601String().split('T')[0];
+      }
+
+      if (Get.isRegistered<ReviewService>()) {
+        final data = await Get.find<ReviewService>().fetchDashboard(
+          unitId: selectedUnitIds.isEmpty ? selectedUnitId.value : null,
+          unitIds: selectedUnitIds.isNotEmpty ? selectedUnitIds.toList() : null,
+          sentiment: selectedSentiment.value.isNotEmpty
+              ? selectedSentiment.value
+              : null,
+          fromDate: fromDateStr,
+          toDate: toDateStr,
+        );
+        dashboardData.value = data;
+      }
+    } catch (e) {
+      debugPrint('Error loading dashboard: $e');
+    } finally {
+      isLoadingDashboard.value = false;
+    }
+  }
+
+  /// Set selected sentiment filter for dashboard
+  void setSelectedSentiment(String sentiment) {
+    selectedSentiment.value = sentiment;
+    fetchDashboard();
   }
 
   /// Fetch Units list from API (Only for Admin role)
@@ -52,7 +118,7 @@ class ReportController extends GetxController {
       isLoadingUnits.value = true;
       if (Get.isRegistered<AuthController>()) {
         final authCtrl = Get.find<AuthController>();
-        if (!authCtrl.isAdmin) {
+        if (!authCtrl.isAdmin && !authCtrl.isCo) {
           units.clear();
           return;
         }
@@ -86,7 +152,11 @@ class ReportController extends GetxController {
       if (Get.isRegistered<ReviewService>()) {
         final fetchedReviews = await Get.find<ReviewService>().fetchReviews(
           page: 1,
-          unitId: selectedUnitId.value,
+          unitId: selectedUnitIds.isEmpty ? selectedUnitId.value : null,
+          unitIds: selectedUnitIds.isNotEmpty ? selectedUnitIds.toList() : null,
+          sentiment: selectedSentiment.value.isNotEmpty
+              ? selectedSentiment.value
+              : null,
           fromDate: fromDateStr,
           toDate: toDateStr,
         );
@@ -99,16 +169,125 @@ class ReportController extends GetxController {
     }
   }
 
-  /// Set selected unit filter ID and fetch reviews
+  /// Delete review by ID
+  Future<bool> deleteReview(String reviewId) async {
+    try {
+      isDeletingReview.value = true;
+      if (Get.isRegistered<ReviewService>()) {
+        final res =
+            await Get.find<ReviewService>().deleteReview(reviewId: reviewId);
+        Get.snackbar(
+          'Success',
+          res['message'] ?? 'Review deleted successfully',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green.shade700,
+          colorText: Colors.white,
+        );
+        reviews.removeWhere((r) => r.id == reviewId);
+        await fetchReviews();
+        await fetchDashboard();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      Get.snackbar(
+        'Delete Failed',
+        e.toString().replaceAll('Exception:', '').trim(),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+      );
+      return false;
+    } finally {
+      isDeletingReview.value = false;
+    }
+  }
+
+  /// Toggle chart details visibility (expand/collapse search & list)
+  void toggleDetailsVisibility() {
+    isDetailsVisible.value = !isDetailsVisible.value;
+  }
+
+  /// Toggle single unit ID in selectedUnitIds
+  void toggleUnitSelection(String unitId) {
+    if (selectedUnitIds.contains(unitId)) {
+      selectedUnitIds.remove(unitId);
+    } else {
+      selectedUnitIds.add(unitId);
+    }
+    fetchReviews();
+  }
+
+  /// Set multi-select unit IDs
+  void setSelectedUnitIds(List<String> unitIds) {
+    selectedUnitIds.assignAll(unitIds);
+    fetchReviews();
+  }
+
+  /// Select all available units
+  void selectAllUnits() {
+    selectedUnitIds.assignAll(units.map((u) => u.id).toList());
+    fetchReviews();
+  }
+
+  /// Clear unit selection (fetches all units)
+  void clearUnitSelection() {
+    selectedUnitIds.clear();
+    selectedUnitId.value = '';
+    fetchReviews();
+  }
+
+  /// Set selected unit filter ID and fetch reviews & dashboard
   void setSelectedUnitId(String unitId) {
     selectedUnitId.value = unitId;
+    selectedUnitIds.clear();
     fetchReviews();
+    fetchDashboard();
+  }
+
+  /// Apply 2 Days Date Filter (Today - 2 Days to Today)
+  void apply2DaysFilter() {
+    activeDatePreset.value = '2 Days';
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 2));
+    selectedDateRange.value = DateTimeRange(start: start, end: now);
+    fetchReviews();
+    fetchDashboard();
+  }
+
+  /// Apply 7 Days Date Filter (Today - 7 Days to Today)
+  void apply7DaysFilter() {
+    activeDatePreset.value = '7 Days';
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 7));
+    selectedDateRange.value = DateTimeRange(start: start, end: now);
+    fetchReviews();
+    fetchDashboard();
+  }
+
+  /// Apply Custom Date Range Filter
+  void applyCustomDateRange(DateTimeRange range) {
+    activeDatePreset.value = 'Custom';
+    selectedDateRange.value = range;
+    fetchReviews();
+    fetchDashboard();
+  }
+
+  /// Clear Date Filter (All Dates)
+  void clearDateFilter() {
+    activeDatePreset.value = 'All';
+    selectedDateRange.value = null;
+    fetchReviews();
+    fetchDashboard();
   }
 
   /// Set custom date range filter and fetch reviews
   void setDateRange(DateTimeRange? range) {
-    selectedDateRange.value = range;
-    fetchReviews();
+    if (range != null) {
+      applyCustomDateRange(range);
+    } else {
+      clearDateFilter();
+    }
   }
 
   /// Filtered list of reviews based on search query
@@ -149,8 +328,8 @@ class ReportController extends GetxController {
         _startIncomingSmsListener();
       } else {
         // Check if permanently denied to guide user to settings
-        isPermanentlyDenied.value = await _smsService
-            .isPermissionPermanentlyDenied();
+        isPermanentlyDenied.value =
+            await _smsService.isPermissionPermanentlyDenied();
       }
     } catch (e) {
       errorMessage.value = 'Failed during initialization: $e';
@@ -179,8 +358,8 @@ class ReportController extends GetxController {
           snackPosition: SnackPosition.BOTTOM,
         );
       } else {
-        isPermanentlyDenied.value = await _smsService
-            .isPermissionPermanentlyDenied();
+        isPermanentlyDenied.value =
+            await _smsService.isPermissionPermanentlyDenied();
         if (isPermanentlyDenied.value) {
           Get.snackbar(
             'Permissions Denied',
@@ -298,7 +477,8 @@ class ReportController extends GetxController {
       final range = selectedDateRange.value;
       if (range != null) {
         if (report.receivedTime.isBefore(range.start) ||
-            report.receivedTime.isAfter(range.end.add(const Duration(days: 1)))) {
+            report.receivedTime
+                .isAfter(range.end.add(const Duration(days: 1)))) {
           return false;
         }
       }

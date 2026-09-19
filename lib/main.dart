@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'controllers/auth_controller.dart';
 import 'controllers/report_controller.dart';
+import 'controllers/user_controller.dart';
 import 'repository/report_repository.dart';
 import 'services/auth_service.dart';
 import 'services/review_service.dart';
 import 'services/sms_service.dart';
 import 'services/storage_service.dart';
+import 'services/user_service.dart';
 import 'utils/theme.dart';
 
 void main() async {
@@ -22,6 +24,7 @@ void main() async {
   Get.put(AuthController());
 
   // 3. Register other services and repositories
+  Get.put(UserService());
   Get.put(SmsService());
   Get.put(
     ReportRepository(
@@ -30,8 +33,9 @@ void main() async {
     ),
   );
 
-  // 4. Register state controller lazily with fenix so it persists across offAll navigation
+  // 4. Register state controllers lazily with fenix so they persist across offAll navigation
   Get.lazyPut(() => ReportController(), fenix: true);
+  Get.lazyPut(() => UserController(), fenix: true);
 
   runApp(const BharosaAdminApp());
 }
@@ -42,9 +46,9 @@ class BharosaAdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'BHAROSA Admin',
+      title: 'SMILE Admin',
       theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      // darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.light, // Forces white light theme by default
       home: const Scaffold(
         body: Center(

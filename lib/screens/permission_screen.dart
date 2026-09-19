@@ -48,7 +48,7 @@ class PermissionScreen extends StatelessWidget {
                 return Text(
                   isDenied
                       ? 'SMS permissions have been permanently denied. To receive employee safety reports, please manually enable them in the System Settings under App Info > Permissions.'
-                      : 'The BHAROSA Admin application reads incoming SMS messages and filters employee safety reports.\n\nSince this application works entirely offline with no internet access, it depends on device permissions to scan incoming messages and show reports on your dashboard.',
+                      : 'The SMILE Admin application reads incoming SMS messages and filters employee safety reports.\n\nSince this application works entirely offline with no internet access, it depends on device permissions to scan incoming messages and show reports on your dashboard.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,

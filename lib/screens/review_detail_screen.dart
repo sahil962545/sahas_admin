@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import '../controllers/auth_controller.dart';
+import '../controllers/report_controller.dart';
 import '../models/review_model.dart';
 import '../utils/theme.dart';
 
@@ -20,11 +22,87 @@ class ReviewDetailScreen extends StatelessWidget {
     );
   }
 
+  void _showDeleteConfirmationDialog(BuildContext context) {
+    final ReportController controller = Get.find<ReportController>();
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Theme.of(context).colorScheme.error),
+              const SizedBox(width: 10),
+              const Text('Delete Review', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: const Text(
+            'Are you sure you want to delete this review?\n\nThis action will send a delete request and cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            Obx(() {
+              final isDeleting = controller.isDeletingReview.value;
+              return ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        final success = await controller.deleteReview(review.id);
+                        if (success && dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop(); // Dismiss dialog
+                          if (context.mounted) {
+                            Navigator.of(context).pop(); // Return to reviews list
+                          }
+                        }
+                      },
+                icon: isDeleting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.delete_forever_rounded),
+                label: Text(isDeleting ? 'Deleting...' : 'Delete'),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final moodStyle = getMoodStyle(review.review);
+    final moodStyle = getMoodStyle(
+        review.sentiment.isNotEmpty ? review.sentiment : review.review);
     final theme = Theme.of(context);
-    final formattedDate = DateFormat('dd MMMM yyyy, hh:mm:ss a').format(review.createdAt);
+    final formattedDate =
+        DateFormat('dd MMMM yyyy, hh:mm:ss a').format(review.createdAt);
+
+    final displayName = review.name.isNotEmpty
+        ? review.name
+        : (review.unit != null && review.unit!.name.isNotEmpty
+            ? 'Unit ${review.unit!.name}'
+            : 'Anonymous User');
+
+    final displaySentiment = review.formattedSentiment.isNotEmpty
+        ? review.formattedSentiment
+        : (review.review.isNotEmpty ? review.review : 'Review');
 
     return Scaffold(
       appBar: AppBar(
@@ -32,7 +110,23 @@ class ReviewDetailScreen extends StatelessWidget {
           'Review Details',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        actions: [
+          Obx(() {
+            if (Get.isRegistered<AuthController>() &&
+                !Get.find<AuthController>().canDeleteReviews) {
+              return const SizedBox.shrink();
+            }
+            return IconButton(
+              icon: const Icon(Icons.delete_outline_rounded),
+              tooltip: 'Delete Review',
+              color: theme.colorScheme.error,
+              onPressed: () => _showDeleteConfirmationDialog(context),
+            );
+          }),
+        ],
       ),
+
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -63,7 +157,7 @@ class ReviewDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      review.name.isNotEmpty ? review.name : 'Anonymous',
+                      displayName,
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -71,7 +165,8 @@ class ReviewDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
                         color: moodStyle.color.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
@@ -82,10 +177,11 @@ class ReviewDetailScreen extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(moodStyle.icon, size: 18, color: moodStyle.color),
+                          Icon(moodStyle.icon,
+                              size: 18, color: moodStyle.color),
                           const SizedBox(width: 6),
                           Text(
-                            review.review,
+                            displaySentiment,
                             style: theme.textTheme.titleMedium?.copyWith(
                               color: moodStyle.color,
                               fontWeight: FontWeight.bold,
@@ -110,15 +206,27 @@ class ReviewDetailScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    // Mobile Number Row
+                    // Review Comment Row
                     _buildDetailRow(
                       context,
-                      icon: Icons.phone_rounded,
-                      label: 'Mobile Number',
-                      value: review.mobile.isNotEmpty ? review.mobile : 'N/A',
-                      onCopy: review.mobile.isNotEmpty
-                          ? () => _copyToClipboard(review.mobile, 'Mobile number copied')
+                      icon: Icons.rate_review_rounded,
+                      label: 'Review Comment',
+                      value: review.review.isNotEmpty
+                          ? '"${review.review}"'
+                          : 'N/A',
+                      onCopy: review.review.isNotEmpty
+                          ? () => _copyToClipboard(
+                              review.review, 'Review comment copied')
                           : null,
+                    ),
+                    const Divider(height: 24),
+
+                    // Sentiment Row
+                    _buildDetailRow(
+                      context,
+                      icon: Icons.emoji_emotions_rounded,
+                      label: 'Sentiment',
+                      value: displaySentiment,
                     ),
                     const Divider(height: 24),
 
@@ -127,9 +235,23 @@ class ReviewDetailScreen extends StatelessWidget {
                       context,
                       icon: Icons.business_rounded,
                       label: 'Unit Name',
-                      value: review.unit?.name ?? 'N/A',
+                      value: review.unit?.name.isNotEmpty == true
+                          ? 'Unit ${review.unit!.name}'
+                          : 'N/A',
                     ),
                     const Divider(height: 24),
+
+                    // Mobile Number Row
+                    // _buildDetailRow(
+                    //   context,
+                    //   icon: Icons.phone_rounded,
+                    //   label: 'Mobile Number',
+                    //   value: review.mobile.isNotEmpty ? review.mobile : 'N/A',
+                    //   onCopy: review.mobile.isNotEmpty
+                    //       ? () => _copyToClipboard(review.mobile, 'Mobile number copied')
+                    //       : null,
+                    // ),
+                    // const Divider(height: 24),
 
                     // Created At Timestamp Row
                     _buildDetailRow(
@@ -137,16 +259,6 @@ class ReviewDetailScreen extends StatelessWidget {
                       icon: Icons.calendar_today_rounded,
                       label: 'Submitted At',
                       value: formattedDate,
-                    ),
-                    const Divider(height: 24),
-
-                    // Record ID Row
-                    _buildDetailRow(
-                      context,
-                      icon: Icons.fingerprint_rounded,
-                      label: 'Record ID',
-                      value: review.id,
-                      onCopy: () => _copyToClipboard(review.id, 'Record ID copied'),
                     ),
                   ],
                 ),
@@ -166,12 +278,13 @@ class ReviewDetailScreen extends StatelessWidget {
     VoidCallback? onCopy,
   }) {
     final theme = Theme.of(context);
+
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
@@ -189,14 +302,13 @@ class ReviewDetailScreen extends StatelessWidget {
                 label,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
@@ -204,9 +316,9 @@ class ReviewDetailScreen extends StatelessWidget {
         ),
         if (onCopy != null)
           IconButton(
-            icon: const Icon(Icons.copy_rounded, size: 20),
-            onPressed: onCopy,
+            icon: const Icon(Icons.copy_rounded, size: 18),
             tooltip: 'Copy',
+            onPressed: onCopy,
           ),
       ],
     );

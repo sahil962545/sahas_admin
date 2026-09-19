@@ -1,6 +1,6 @@
 {
-    "name": "sahas_admin",
-    "short_name": "sahas_admin",
+    "name": "SMILE Admin",
+    "short_name": "SMILE Admin",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

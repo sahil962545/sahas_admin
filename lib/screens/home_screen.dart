@@ -3,8 +3,11 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../controllers/auth_controller.dart';
 import '../controllers/report_controller.dart';
-import '../utils/theme.dart';
-import '../widgets/review_card.dart';
+import '../models/dashboard_model.dart';
+import '../widgets/dashboard_chart_card.dart';
+import '../widgets/unit_sentiment_bar_chart_card.dart';
+import 'change_password_screen.dart';
+import 'reviews_list_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -15,20 +18,16 @@ class HomeScreen extends StatelessWidget {
         ? Get.find<ReportController>()
         : Get.put(ReportController());
     final AuthController authController = Get.find<AuthController>();
-    final searchController = TextEditingController();
-
-    // Sync search input controller with GetX state
-    searchController.addListener(() {
-      controller.searchQuery.value = searchController.text;
-    });
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: false,
         title: const Text(
-          'BHAROSA ADMIN',
+          'SMILE ADMIN',
           style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2),
         ),
         actions: [
+          /*
           // Theme Toggle Button
           IconButton(
             icon: Icon(Get.isDarkMode ? Icons.light_mode : Icons.dark_mode),
@@ -37,16 +36,33 @@ class HomeScreen extends StatelessWidget {
               if (Get.isDarkMode) {
                 Get.changeTheme(AppTheme.lightTheme);
               } else {
-                Get.changeTheme(AppTheme.darkTheme);
+                // Get.changeTheme(AppTheme.darkTheme);
               }
             },
           ),
+          */
           // Refresh Button
           IconButton(
             icon: const Icon(Icons.sync_rounded),
-            tooltip: 'Refresh Reviews',
-            onPressed: () => controller.fetchReviews(),
+            tooltip: 'Refresh Dashboard',
+            onPressed: () {
+              controller.fetchDashboard();
+              controller.fetchReviews();
+            },
           ),
+          // Change Password Button (Hidden for CO role)
+          Obx(() {
+            if (!authController.canChangePassword) {
+              return const SizedBox.shrink();
+            }
+            return IconButton(
+              icon: const Icon(Icons.lock_reset_rounded),
+              tooltip: 'Change Password',
+              onPressed: () {
+                Get.to(() => const ChangePasswordScreen());
+              },
+            );
+          }),
           // Logout Button
           IconButton(
             icon: const Icon(Icons.logout_rounded),
@@ -77,326 +93,312 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Header Section
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: searchController,
-              decoration: InputDecoration(
-                hintText: 'Search reviews by name, mobile, review, unit...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: Obx(() {
-                  if (controller.searchQuery.value.isNotEmpty) {
-                    return IconButton(
-                      icon: const Icon(Icons.clear_rounded),
-                      onPressed: () {
-                        searchController.clear();
-                      },
-                    );
-                  }
-                  return const SizedBox.shrink();
-                }),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-            ),
-          ),
-
-          // Admin Unit Selector Bar (Visible ONLY if role is admin)
-          Obx(() {
-            if (!authController.isAdmin) {
-              return const SizedBox.shrink();
-            }
-
-            final units = controller.units;
-
-            return Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outlineVariant
-                        .withValues(alpha: 0.5),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([
+            controller.fetchDashboard(),
+            controller.fetchReviews(),
+          ]);
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Dashboard Filters Card (Unit, Sentiment, Date Range)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Card(
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.business_rounded,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Unit Filter:',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: controller.selectedUnitId.value,
-                          isExpanded: true,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: '',
-                              child: Text('All Units'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.filter_alt_rounded,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
-                            ...units.map((u) => DropdownMenuItem<String>(
-                                  value: u.id,
-                                  child: Text(u.name),
-                                )),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              controller.setSelectedUnitId(val);
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-
-          const SizedBox(height: 4),
-
-          // Date Range Selector Bar
-          Obx(() {
-            final range = controller.selectedDateRange.value;
-            final String dateText;
-            if (range != null) {
-              final startStr = DateFormat('dd MMM yyyy').format(range.start);
-              final endStr = DateFormat('dd MMM yyyy').format(range.end);
-              dateText = '$startStr - $endStr';
-            } else {
-              dateText = 'All Dates (Tap to select range)';
-            }
-
-            return Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
-                      .withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      final now = DateTime.now();
-                      final picked = await showDateRangePicker(
-                        context: context,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(now.year + 5),
-                        initialDateRange: range ??
-                            DateTimeRange(
-                              start: now.subtract(const Duration(days: 30)),
-                              end: now,
-                            ),
-                      );
-                      if (picked != null) {
-                        controller.setDateRange(picked);
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14.0, vertical: 10.0),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.date_range_rounded,
-                            color: Theme.of(context).colorScheme.primary,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              dateText,
+                            const SizedBox(width: 8),
+                            Text(
+                              'Dashboard Filters',
                               style: Theme.of(context)
                                   .textTheme
-                                  .bodyMedium
+                                  .titleSmall
                                   ?.copyWith(
                                     fontWeight: FontWeight.bold,
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
                                   ),
                             ),
-                          ),
-                          if (range != null) ...[
-                            IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 20),
-                              tooltip: 'Clear Date Filter',
-                              onPressed: () => controller.setDateRange(null),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // A. Single-Select Unit Filter Dropdown (Admin & CO)
+                        Obx(() {
+                          if (!authController.isAdmin && !authController.isCo) {
+                            return const SizedBox.shrink();
+                          }
+
+
+                          final units = controller.units;
+                          final selectedId = controller.selectedUnitId.value;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10.0),
+                            child: DropdownButtonFormField<String>(
+                              value: selectedId.isEmpty ? '' : selectedId,
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                labelText: 'Filter Unit',
+                                prefixIcon: Icon(
+                                  Icons.business_rounded,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              items: [
+                                const DropdownMenuItem<String>(
+                                  value: '',
+                                  child: Text('All Units'),
+                                ),
+                                ...units.map((unit) {
+                                  return DropdownMenuItem<String>(
+                                    value: unit.id,
+                                    child: Text(unit.name),
+                                  );
+                                }),
+                              ],
+                              onChanged: (val) {
+                                controller.setSelectedUnitId(val ?? '');
+                              },
                             ),
-                          ] else
-                            const Icon(Icons.arrow_drop_down_rounded),
-                        ],
-                      ),
+                          );
+                        }),
+
+                        // B. Sentiment Choice Chips Bar
+                        Obx(() {
+                          final selected = controller.selectedSentiment.value;
+
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('All Sentiments'),
+                                  selected: selected.isEmpty,
+                                  onSelected: (val) {
+                                    if (val) {
+                                      controller.setSelectedSentiment('');
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  label: const Text('Happy 😊'),
+                                  selected: selected == 'happy',
+                                  selectedColor: const Color(0xFFD1FAE5),
+                                  onSelected: (val) {
+                                    if (val) {
+                                      controller.setSelectedSentiment('happy');
+                                    } else {
+                                      controller.setSelectedSentiment('');
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  label: const Text('Unhappy 🙁'),
+                                  selected: selected == 'unhappy',
+                                  selectedColor: const Color(0xFFFEF3C7),
+                                  onSelected: (val) {
+                                    if (val) {
+                                      controller
+                                          .setSelectedSentiment('unhappy');
+                                    } else {
+                                      controller.setSelectedSentiment('');
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  label: const Text('Emergency 🚨'),
+                                  selected: selected == 'emergency',
+                                  selectedColor: const Color(0xFFFEE2E2),
+                                  onSelected: (val) {
+                                    if (val) {
+                                      controller
+                                          .setSelectedSentiment('emergency');
+                                    } else {
+                                      controller.setSelectedSentiment('');
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+
+                        const SizedBox(height: 8),
+
+                        // C. Date Preset Choice Chips Bar
+                        Obx(() {
+                          final activePreset =
+                              controller.activeDatePreset.value;
+                          final range = controller.selectedDateRange.value;
+
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('All Dates'),
+                                  selected: activePreset == 'All',
+                                  onSelected: (val) {
+                                    if (val) controller.clearDateFilter();
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  label: const Text('2 Days'),
+                                  selected: activePreset == '2 Days',
+                                  onSelected: (val) {
+                                    if (val) controller.apply2DaysFilter();
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  label: const Text('7 Days'),
+                                  selected: activePreset == '7 Days',
+                                  onSelected: (val) {
+                                    if (val) controller.apply7DaysFilter();
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  avatar: const Icon(
+                                      Icons.calendar_month_rounded,
+                                      size: 14),
+                                  label: Text(activePreset == 'Custom' &&
+                                          range != null
+                                      ? '${DateFormat('dd MMM').format(range.start)} - ${DateFormat('dd MMM').format(range.end)}'
+                                      : 'Custom Range'),
+                                  selected: activePreset == 'Custom',
+                                  onSelected: (val) async {
+                                    final now = DateTime.now();
+                                    final picked = await showDateRangePicker(
+                                      context: context,
+                                      firstDate: DateTime(2020),
+                                      lastDate: DateTime(now.year + 5),
+                                      initialDateRange: range ??
+                                          DateTimeRange(
+                                            start: now.subtract(
+                                                const Duration(days: 30)),
+                                            end: now,
+                                          ),
+                                    );
+                                    if (picked != null) {
+                                      controller.applyCustomDateRange(picked);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
                     ),
                   ),
                 ),
               ),
-            );
-          }),
 
-          const SizedBox(height: 4),
+              // 1. Dashboard Overview Graph Card
+              Obx(() {
+                final dashboard = controller.dashboardData.value;
+                final isLoading = controller.isLoadingDashboard.value;
 
-          // Main Cloud Reviews List Area
-          Expanded(
-            child: Obx(() {
-              final reviews = controller.filteredReviews;
-              final isLoading = controller.isLoading.value;
+                if (dashboard == null && !isLoading) {
+                  return const SizedBox.shrink();
+                }
 
-              // Prominent Circular Progress Indicator when data changes/loading
-              if (isLoading) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Fetching reviews...',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              if (reviews.isEmpty) {
-                return _buildEmptyState(context, controller);
-              }
-
-              return RefreshIndicator(
-                onRefresh: () => controller.fetchReviews(),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-
-                    // Responsive columns logic for larger screens
-                    int crossAxisCount = 1;
-                    if (width >= 900) {
-                      crossAxisCount = 3;
-                    } else if (width >= 600) {
-                      crossAxisCount = 2;
-                    }
-
-                    if (crossAxisCount > 1) {
-                      return GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1.8,
-                        ),
-                        itemCount: reviews.length,
-                        itemBuilder: (context, index) {
-                          return ReviewCard(review: reviews[index]);
-                        },
-                      );
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      itemCount: reviews.length,
-                      itemBuilder: (context, index) {
-                        return ReviewCard(review: reviews[index]);
-                      },
-                    );
+                return DashboardChartCard(
+                  dashboard: dashboard ??
+                      const DashboardModel(
+                          happy: 0, unhappy: 0, emergency: 0, total: 0),
+                  isLoading: isLoading,
+                  onTap: () {
+                    Get.to(() => const ReviewsListScreen());
                   },
+                  onSentimentTap: (sentiment) {
+                    controller.setSelectedSentiment(sentiment);
+                    Get.to(() => const ReviewsListScreen());
+                  },
+                );
+              }),
+
+              // 2. Unit Sentiment Breakdown Grouped Bar Chart Card
+              Obx(() {
+                final dashboard = controller.dashboardData.value;
+                final isLoading = controller.isLoadingDashboard.value;
+
+                if (dashboard == null && !isLoading) {
+                  return const SizedBox.shrink();
+                }
+
+                return UnitSentimentBarChartCard(
+                  units: dashboard?.units ?? [],
+                  isLoading: isLoading,
+                  onUnitSentimentTap: (unitId, sentiment) {
+                    controller.setSelectedUnitId(unitId);
+                    if (sentiment.isNotEmpty) {
+                      controller.setSelectedSentiment(sentiment);
+                    }
+                    Get.to(() => const ReviewsListScreen());
+                  },
+                );
+              }),
+
+              const SizedBox(height: 12),
+
+              // Dedicated Full-Width Navigation Button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 24.0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Get.to(() => const ReviewsListScreen());
+                    },
+                    icon: const Icon(Icons.list_alt_rounded, size: 22),
+                    label: const Text(
+                      'View All Reviews & Search',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 3,
+                    ),
+                  ),
                 ),
-              );
-            }),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context, ReportController controller) {
-    final hasFilter = controller.searchQuery.value.isNotEmpty ||
-        controller.selectedUnitId.value.isNotEmpty ||
-        controller.selectedDateRange.value != null;
-
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.5,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              hasFilter ? Icons.search_off_rounded : Icons.rate_review_outlined,
-              size: 72,
-              color:
-                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              hasFilter ? 'No Reviews Found' : 'No Reviews Found',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              hasFilter
-                  ? 'Try adjusting your search query, unit selection, or date range.'
-                  : 'We couldn\'t find any reviews from the cloud server.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => controller.fetchReviews(),
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Refresh Reviews'),
-            ),
-          ],
         ),
       ),
     );
