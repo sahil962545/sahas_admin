@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
 import 'auth_controller.dart';
 import 'package:another_telephony/telephony.dart';
 import '../models/dashboard_model.dart';
@@ -30,6 +32,11 @@ class ReportController extends GetxController {
   final Rxn<DashboardModel> dashboardData = Rxn<DashboardModel>();
   final RxBool isLoadingDashboard = false.obs;
 
+  // PDF Report Observables
+  final RxBool isFetchingReport = false.obs;
+  final Rxn<Uint8List> reportPdfBytes = Rxn<Uint8List>();
+  final RxString reportErrorMessage = ''.obs;
+
   // State Observables
   final RxList<SahasReport> reports = <SahasReport>[].obs;
   final RxBool hasPermission = false.obs;
@@ -50,11 +57,11 @@ class ReportController extends GetxController {
   void onInit() {
     super.onInit();
 
-    // Listen for filter changes and trigger API re-fetch for reviews list automatically
-    ever(selectedUnitId, (_) => fetchReviews());
-    ever(selectedUnitIds, (_) => fetchReviews());
-    ever(selectedDateRange, (_) => fetchReviews());
-    ever(selectedSentiment, (_) => fetchReviews());
+    // Listen for filter changes and trigger API re-fetch for reviews list & PDF report automatically
+    ever(selectedUnitId, (_) => _onFilterChanged());
+    ever(selectedUnitIds, (_) => _onFilterChanged());
+    ever(selectedDateRange, (_) => _onFilterChanged());
+    ever(selectedSentiment, (_) => _onFilterChanged());
 
     // Initial data fetch
     hasPermission.value = true;
@@ -62,6 +69,13 @@ class ReportController extends GetxController {
     fetchUnits();
     fetchReviews();
     fetchDashboard();
+    fetchReport();
+  }
+
+  void _onFilterChanged() {
+    fetchReviews();
+    fetchDashboard();
+    fetchReport();
   }
 
   void _initializeUnitUserScope() {
@@ -166,6 +180,107 @@ class ReportController extends GetxController {
       errorMessage.value = 'Failed to fetch reviews: $e';
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /// Fetch PDF report matching active filters
+  Future<Uint8List?> fetchReport({bool showLoading = false}) async {
+    try {
+      if (showLoading) {
+        isFetchingReport.value = true;
+      }
+      reportErrorMessage.value = '';
+
+      String? fromDateStr;
+      String? toDateStr;
+
+      final range = selectedDateRange.value;
+      if (range != null) {
+        fromDateStr = range.start.toIso8601String().split('T')[0];
+        toDateStr = range.end.toIso8601String().split('T')[0];
+      }
+
+      if (Get.isRegistered<ReviewService>()) {
+        final pdfData = await Get.find<ReviewService>().fetchReviewReport(
+          unitId: selectedUnitIds.isEmpty ? selectedUnitId.value : null,
+          unitIds: selectedUnitIds.isNotEmpty ? selectedUnitIds.toList() : null,
+          sentiment: selectedSentiment.value.isNotEmpty
+              ? selectedSentiment.value
+              : null,
+          fromDate: fromDateStr,
+          toDate: toDateStr,
+        );
+        reportPdfBytes.value = pdfData;
+        return pdfData;
+      }
+    } catch (e) {
+      debugPrint('Error loading review report: $e');
+      reportErrorMessage.value =
+          e.toString().replaceAll('Exception:', '').trim();
+    } finally {
+      if (showLoading) {
+        isFetchingReport.value = false;
+      }
+    }
+    return null;
+  }
+
+  /// Download / save the PDF report and open with system viewer / app chooser
+  Future<void> downloadAndOpenReportPdf() async {
+    try {
+      isFetchingReport.value = true;
+
+      // Fetch fresh report for current filters or use cached bytes if available
+      Uint8List? bytes = await fetchReport(showLoading: false);
+      bytes ??= reportPdfBytes.value;
+
+      if (bytes == null || bytes.isEmpty) {
+        Get.snackbar(
+          'Report Error',
+          reportErrorMessage.value.isNotEmpty
+              ? reportErrorMessage.value
+              : 'Failed to fetch PDF report. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red.shade700,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
+      // Save PDF to temp directory
+      final tempDir = await getTemporaryDirectory();
+      final fileName =
+          'review_report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes, flush: true);
+
+      debugPrint('Report PDF saved to: ${file.path}');
+
+      // Open PDF file with system intent chooser
+      final result = await OpenFilex.open(file.path);
+
+      if (result.type != ResultType.done) {
+        debugPrint(
+            'OpenFilex result type: ${result.type}, message: ${result.message}');
+        Get.snackbar(
+          'Open PDF',
+          'File saved to ${file.path}. ${result.message}',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.blue.shade700,
+          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error downloading/opening PDF: $e');
+      Get.snackbar(
+        'Error',
+        'Could not open PDF report: $e',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+      );
+    } finally {
+      isFetchingReport.value = false;
     }
   }
 

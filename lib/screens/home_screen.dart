@@ -145,7 +145,6 @@ class HomeScreen extends StatelessWidget {
                             return const SizedBox.shrink();
                           }
 
-
                           final units = controller.units;
                           final selectedId = controller.selectedUnitId.value;
 
@@ -401,6 +400,30 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
       ),
+      floatingActionButton: Obx(() {
+        final isFetching = controller.isFetchingReport.value;
+        return FloatingActionButton.extended(
+          onPressed:
+              isFetching ? null : () => controller.downloadAndOpenReportPdf(),
+          icon: isFetching
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Icon(Icons.picture_as_pdf_rounded),
+          label: Text(
+            isFetching ? 'Generating PDF...' : 'PDF Report',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          tooltip: 'Download & Open Review Report PDF',
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        );
+      }),
     );
   }
 }
